@@ -6,6 +6,6 @@
 cwd: ???
 
 defaults:
-    - hydra/output: custom
     - train
     - predict
+    - override hydra/output: custom

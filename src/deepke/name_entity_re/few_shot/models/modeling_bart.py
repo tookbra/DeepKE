@@ -23,8 +23,10 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.nn import CrossEntropyLoss
+from transformers.modeling_outputs import BaseModelOutputWithPast
 
-from transformers.modeling_bart import *
+from transformers.models.bart.modeling_bart import *
+from transformers.file_utils import (add_code_sample_docstrings, add_start_docstrings_to_model_forward)
 
 logger = logging.get_logger(__name__)
 
@@ -230,7 +232,7 @@ class EncoderLayer(nn.Module):
         # self.self_attn = Attention(self.embed_dim, config.encoder_attention_heads, dropout=config.attention_dropout)
         # Lilei:
         self.self_attn = Attention(self.embed_dim, config.encoder_attention_heads, dropout=config.attention_dropout,
-                                    cache_key='encoder', use_prompt=config.use_prompt, preseqlen=config.preseqlen)
+                                   cache_key='encoder', use_prompt=config.use_prompt, preseqlen=config.preseqlen)
         self.normalize_before = config.normalize_before
         self.self_attn_layer_norm = LayerNorm(self.embed_dim)
         self.dropout = config.dropout
@@ -264,7 +266,8 @@ class EncoderLayer(nn.Module):
         x, attn_weights = self.self_attn(
             # query=x, key=x, key_padding_mask=encoder_padding_mask, output_attentions=output_attentions
             # Lilei:
-            idx=idx, query=x, key=x, key_padding_mask=encoder_padding_mask, layer_state=layer_state, output_attentions=output_attentions
+            idx=idx, query=x, key=x, key_padding_mask=encoder_padding_mask, layer_state=layer_state,
+            output_attentions=output_attentions
         )
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
@@ -328,8 +331,8 @@ class BartEncoder(nn.Module):
     def forward(
             # self, input_ids, attention_mask=None, output_attentions=False, output_hidden_states=False, return_dict=False
             # Lilei:
-        self, input_ids, attention_mask=None, past_key_values=None,
-        output_attentions=False, output_hidden_states=False, return_dict=False
+            self, input_ids, attention_mask=None, past_key_values=None,
+            output_attentions=False, output_hidden_states=False, return_dict=False
     ):
         """
         Args:
@@ -391,10 +394,9 @@ class BartEncoder(nn.Module):
             return tuple(v for v in [x, encoder_states, all_attentions] if v is not None)
         return BaseModelOutput(last_hidden_state=x, hidden_states=encoder_states, attentions=all_attentions)
 
-    
     # LiLei: append
     def forward_with_encoder_past(
-        self, input_ids, attention_mask=None, past_key_values=None,
+            self, input_ids, attention_mask=None, past_key_values=None,
             output_attentions=False, output_hidden_states=False, return_dict=False
     ):
         """
@@ -457,7 +459,7 @@ class BartEncoder(nn.Module):
         x = x.transpose(0, 1)
 
         return BaseModelOutputWithPast(last_hidden_state=x, hidden_states=encoder_states,
-                               attentions=all_attentions, past_key_values=encoder_cache)
+                                       attentions=all_attentions, past_key_values=encoder_cache)
 
 
 class DecoderLayer(nn.Module):
@@ -497,7 +499,7 @@ class DecoderLayer(nn.Module):
 
     def forward(
             self,
-            idx, ###
+            idx,  ###
             x,
             encoder_hidden_states,
             encoder_attn_mask=None,
@@ -515,7 +517,7 @@ class DecoderLayer(nn.Module):
         # Self Attention
 
         x, self_attn_weights = self.self_attn(
-            idx=idx,    ###
+            idx=idx,  ###
             query=x,
             key=x,
             layer_state=layer_state,  # adds keys to layer state
@@ -534,7 +536,7 @@ class DecoderLayer(nn.Module):
         if self.normalize_before:
             x = self.encoder_attn_layer_norm(x)
         x, _ = self.encoder_attn(
-            idx=idx, ###
+            idx=idx,  ###
             query=x,
             key=encoder_hidden_states,
             key_padding_mask=encoder_attn_mask,
@@ -689,7 +691,7 @@ class BartDecoder(nn.Module):
             layer_state = past_key_values[idx] if past_key_values is not None else None
 
             x, layer_self_attn, layer_past = decoder_layer(
-                idx, ###
+                idx,  ###
                 x,
                 encoder_hidden_states,
                 encoder_attn_mask=encoder_padding_mask,
@@ -764,7 +766,7 @@ class Attention(nn.Module):
         if self.encoder_decoder_attention:
             assert cache_key == 'encoder_decoder'
         self.cache_key = cache_key
-        self.use_prompt=use_prompt
+        self.use_prompt = use_prompt
         self.preseqlen = preseqlen
 
     def _shape(self, tensor, seq_len, bsz):
@@ -772,7 +774,7 @@ class Attention(nn.Module):
 
     def forward(
             self,
-            idx, ###
+            idx,  ###
             query,
             key: Optional[Tensor],
             key_padding_mask: Optional[Tensor] = None,
@@ -796,12 +798,12 @@ class Attention(nn.Module):
             # LILEI
             use_prompt = self.use_prompt
             preseqlen = self.preseqlen
-            if "prev_key" in saved_state and static_kv and use_prompt: # generation time AND compute cross attention.
+            if "prev_key" in saved_state and static_kv and use_prompt:  # generation time AND compute cross attention.
                 computed_len = saved_state['prev_key'].size(2)
                 # print(computed_len)
                 if computed_len > preseqlen:
                     # print('Happen for generation, NOT for training.')
-                    key=None
+                    key = None
                     no_extend = True
 
             elif "prev_key" in saved_state and static_kv and not use_prompt:
@@ -1014,9 +1016,9 @@ class BartModel(PretrainedBartModel):
 
         self.init_weights()
 
-    @add_start_docstrings_to_callable(BART_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(BART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
+        processor_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",
         output_type=Seq2SeqModelOutput,
         config_class=_CONFIG_FOR_DOC,
@@ -1079,12 +1081,11 @@ class BartModel(PretrainedBartModel):
             if use_prompt:
                 bsz, _, seqlen, _ = past_key_values[0]['self']['prev_value'].shape
                 tgt_len = decoder_input_ids.size(1)
-                temp_mask = torch.zeros(tgt_len, seqlen).to(causal_mask.device) #tgtlen, preseqlen
-                causal_mask = torch.cat([temp_mask, causal_mask],dim=1) #tgtlen, preseqlen+tgtlen
+                temp_mask = torch.zeros(tgt_len, seqlen).to(causal_mask.device)  # tgtlen, preseqlen
+                causal_mask = torch.cat([temp_mask, causal_mask], dim=1)  # tgtlen, preseqlen+tgtlen
         else:
             print('USE cache')
             decoder_padding_mask, causal_mask = None, None
-
 
         assert decoder_input_ids is not None
 
@@ -1176,7 +1177,7 @@ class BartForConditionalGeneration(PretrainedBartModel):
             new_bias = torch.cat([self.final_logits_bias, extra_bias], dim=1)
         self.register_buffer("final_logits_bias", new_bias)
 
-    @add_start_docstrings_to_callable(BART_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(BART_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)
     @add_end_docstrings(BART_GENERATION_EXAMPLE)
     def forward(
@@ -1323,7 +1324,8 @@ class BartForConditionalGeneration(PretrainedBartModel):
             # get the correct batch idx from decoder layer's batch dim for cross and self-attn
             layer_past_new = {
                 # attn_key: _reorder_buffer(attn_cache, beam_idx) for attn_key, attn_cache in layer_past.items()
-                attn_key: _reorder_buffer(attn_cache, beam_idx) for attn_key, attn_cache in layer_past.items() if attn_key in ['encoder_decoder', 'self']
+                attn_key: _reorder_buffer(attn_cache, beam_idx) for attn_key, attn_cache in layer_past.items() if
+                attn_key in ['encoder_decoder', 'self']
             }
             reordered_past.append(layer_past_new)
         return reordered_past
@@ -1352,9 +1354,9 @@ class BartForSequenceClassification(PretrainedBartModel):
         self.model._init_weights(self.classification_head.dense)
         self.model._init_weights(self.classification_head.out_proj)
 
-    @add_start_docstrings_to_callable(BART_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(BART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
+        processor_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",
         output_type=Seq2SeqSequenceClassifierOutput,
         config_class=_CONFIG_FOR_DOC,
@@ -1438,9 +1440,9 @@ class BartForQuestionAnswering(PretrainedBartModel):
 
         self.model._init_weights(self.qa_outputs)
 
-    @add_start_docstrings_to_callable(BART_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(BART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
+        processor_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",
         output_type=Seq2SeqQuestionAnsweringModelOutput,
         config_class=_CONFIG_FOR_DOC,

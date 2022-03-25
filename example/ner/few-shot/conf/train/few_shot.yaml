@@ -1,3 +1,4 @@
+# coding=utf-8
 seed: 1
 
 bart_name: "facebook/bart-large"
